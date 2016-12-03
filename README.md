@@ -12,3 +12,10 @@ Running the converter:
 $ ghc airbus
 $ ./airbus eastbound.txt > eastbound.sql
 ```
+
+or use Cabal:
+```
+$ cabal install
+$ cabal run westbound.txt > westbound.sql
+```
+
