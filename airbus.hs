@@ -2,14 +2,12 @@
  - Mitchell Vitez
  - 2016
  -
- - Reads in an input file with airbus schedules and outputs in
+ - Reads in an input file with airbus schedules and outputs
  - SQL to upload to the database.
  -}
 
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-
-{- Use Map then read into SeasonRecord instead of list of SeasonVar -}
 
 import System.Environment
 import System.Exit
@@ -19,6 +17,7 @@ import Data.Text as T (Text, toLower, pack, unpack, length)
 import Data.Text.IO as T (readFile, putStrLn)
 import Data.Text.Read as T (decimal)
 import Data.Monoid ((<>))
+import Control.Monad (when)
 
 data Season = Season [SeasonVar] [Day] deriving Show
 data SeasonVar = SeasonVar Text Text deriving Show
@@ -106,27 +105,28 @@ parseTrip Eastbound = do
 
 -- CONVERSION --
 
+showDate :: Date -> Text
 showDate (Date y m d) = y <> "-" <> m <> "-" <> d
 
 sixPmDayBefore :: Date -> Text
 sixPmDayBefore (Date y m d) = y <> "-" <> m <> "-" <> day <> " 18:00:00"
   where day = (T.pack . show . subtract 1 . read . T.unpack) d
 
-show2 :: Int -> Text
-show2 n | T.length (T.pack (show n)) == 1 = "0" <> (T.pack (show n))
+twoDigits :: Int -> Text
+twoDigits n | (T.length . T.pack . show) n == 1 = "0" <> T.pack (show n)
         | otherwise = T.pack $ show n
 
-tts :: Time -> Text
-tts (Time h m ampm) =
+formatTime :: Time -> Text
+formatTime (Time h m ampm) =
   T.pack (show (if ampm == 'a' || h >= 12 then h else h + 12))
-    <> ":" <> show2 m 
+    <> ":" <> twoDigits m 
 
 tripToSql :: SeasonRecord -> Date -> Trip -> Text
 tripToSql season date (WestboundTrip tripNumber north mcnamara annArbor) =
   "INSERT INTO `orms_westbound`" <> 
     "(`number`, `date`, `north`, `mcnamara`, `annarbor`, `seasonId`) VALUES (" <>
-    T.pack (show tripNumber) <> ",\"" <> showDate date <> "\",\"" <> tts north <>
-    "\",\"" <> tts mcnamara <> "\",\"" <> tts annArbor <> "\"," <>
+    T.pack (show tripNumber) <> ",\"" <> showDate date <> "\",\"" <> formatTime north <>
+    "\",\"" <> formatTime mcnamara <> "\",\"" <> formatTime annArbor <> "\"," <>
     seasonId season <> ");"
 tripToSql season date (EastboundTrip tripNumber blockNumber
     bursley hill state airport) =
@@ -138,8 +138,8 @@ tripToSql season date (EastboundTrip tripNumber blockNumber
   showDate date <> "\"," <> T.pack (show 48) <> "," <>
   T.pack (show blockNumber) <> "," <> "\"\"" <> ",\"" <>
   reservationsOpen season <> "\",\"" <> sixPmDayBefore date <> "\",\"" <>
-  tts bursley <> "\",\"" <> tts hill <> "\",\"" <> tts state <> "\",\"" <>
-  tts airport <> "\");"
+  formatTime bursley <> "\",\"" <> formatTime hill <> "\",\"" <>
+  formatTime state <> "\",\"" <> formatTime airport <> "\");"
 
 dayToSql :: SeasonRecord -> Day -> [Text]
 dayToSql sr (Day date trips) = map (tripToSql sr date) trips
@@ -148,13 +148,13 @@ toSql :: Either String Season -> [Text]
 toSql (Left x) = [T.pack x]
 toSql (Right (Season seasonVars days)) =
   let sr = seasonVarsToRecord seasonVars
-  in concat $ map (dayToSql sr) days
+  in concatMap (dayToSql sr) days
 
 getSeasonVar :: Text -> [SeasonVar] -> Text
 getSeasonVar s lst = val seasonVar
   where pred (SeasonVar k _) = s == k
         seasonVar = find pred lst
-        val (Nothing) = ""
+        val Nothing = ""
         val (Just (SeasonVar _ v)) = v
 
 seasonVarsToRecord :: [SeasonVar] -> SeasonRecord
@@ -170,8 +170,8 @@ seasonVarsToRecord seasonVars =
 main :: IO ()
 main = do
   args <- getArgs
-  if Prelude.length args /= 1 
-    then die "Error: Please supply a filename for conversion" else return ()
-  file <- T.readFile $ args !! 0
+  when (Prelude.length args /= 1) $
+    die "Error: Please supply a filename for conversion"
+  file <- T.readFile $ head args
   mapM_ T.putStrLn $ toSql $ parseOnly parseSeason file
 
