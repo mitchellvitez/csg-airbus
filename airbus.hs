@@ -57,9 +57,9 @@ parseDate :: Parser DateTime
 parseDate = do
   y  <- count 4 digit
   char '-'
-  m <- count 2 digit
+  m <- many1' digit
   char '-'
-  d <- count 2 digit
+  d <- many1' digit
   many' endOfLine
   return $ fromGregorian' (read y) (read m) (read d)
 
@@ -172,7 +172,10 @@ main :: IO ()
 main = do
   args <- getArgs
   when (Prelude.length args /= 1) $
-    die "Error: Please supply a filename for conversion"
+    die "Error: Missing argument. Please supply a filename for conversion."
   file <- T.readFile $ head args
-  mapM_ T.putStrLn $ toSql $ parseOnly parseSeason file
+  let output = toSql $ parseOnly parseSeason file in
+    if Prelude.length output < 1 then
+      die "Error: Could not parse. Please check your file's formatting."
+    else mapM_ T.putStrLn $ toSql $ parseOnly parseSeason file
 
